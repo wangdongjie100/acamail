@@ -13,10 +13,10 @@ from gmail.models import ClassificationResult, Email
 logger = logging.getLogger(__name__)
 
 CLASSIFICATION_PROMPT = """\
-You are an intelligent email assistant. Analyze the following email and determine:
+You are an intelligent email assistant for Dongjie Wang. Analyze the following email and determine:
 1. Whether this email requires the user to reply (needs_reply: true/false)
 2. Priority level (priority: high/medium/low)
-3. Category (category: question/request/notification/newsletter/auto-reply/social/promotion/other)
+3. Category (category: question/request/notification/newsletter/auto-reply/social/promotion/calendar/other)
 4. A concise one-line summary in Chinese (summary)
 5. A detailed Chinese summary of the email content, including 1-2 key original sentences quoted as evidence (detail_summary)
 6. Brief reason why it does/doesn't need a reply in Chinese (reason)
@@ -24,12 +24,16 @@ You are an intelligent email assistant. Analyze the following email and determin
 Rules for determining "needs_reply":
 - TRUE if: the email asks a question directly to the user, requests action, contains a task assignment, 
   asks for confirmation/approval, or is a meaningful conversation that expects a response.
+- TRUE if: the email body mentions "Dongjie Wang" or "Dongjie" — this means the user is directly involved 
+  in the conversation thread and should respond. Mark as HIGH priority.
+- TRUE if: the email is about scheduling a meeting, calendar invitation, or asking for availability. 
+  Mark category as "calendar" and priority as HIGH.
 - FALSE if: the email is a notification/alert (CI/CD, GitHub, monitoring), newsletter/marketing, 
-  auto-generated system email, calendar invite (accept/decline via calendar instead), 
-  social media notification, promotional email, delivery tracking, 
+  auto-generated system email, social media notification, promotional email, delivery tracking, 
   or informational email that doesn't expect a response.
 
 The user's email address is: {user_email}
+The user's name is: Dongjie Wang
 
 Email details:
 - From: {sender} <{sender_email}>
@@ -43,7 +47,7 @@ Respond ONLY with valid JSON, no markdown formatting:
 {{
   "needs_reply": true/false,
   "priority": "high/medium/low",
-  "category": "question/request/notification/newsletter/auto-reply/social/promotion/other",
+  "category": "question/request/notification/newsletter/auto-reply/social/promotion/calendar/other",
   "summary": "一句话中文摘要",
   "detail_summary": "详细中文摘要（2-3句话），并引用1-2句关键原文。例如：对方询问了项目进度，并提到 \\"Could you please confirm the deadline?\\"",
   "reason": "中文原因说明"
@@ -51,16 +55,21 @@ Respond ONLY with valid JSON, no markdown formatting:
 """
 
 BATCH_CLASSIFICATION_PROMPT = """\
-You are an intelligent email assistant. Analyze ALL of the following emails and classify each one.
+You are an intelligent email assistant for Dongjie Wang. Analyze ALL of the following emails and classify each one.
 
 Rules for determining "needs_reply":
 - TRUE if: the email asks a question directly to the user, requests action, contains a task assignment, 
   asks for confirmation/approval, or is a meaningful conversation that expects a response.
+- TRUE if: the email body mentions "Dongjie Wang" or "Dongjie" — this means the user is directly involved 
+  in the conversation thread and should respond. Mark as HIGH priority.
+- TRUE if: the email is about scheduling a meeting, calendar invitation, or asking for availability. 
+  Mark category as "calendar" and priority as HIGH.
 - FALSE if: the email is a notification/alert, newsletter/marketing, auto-generated system email, 
-  calendar invite, social media notification, promotional email, delivery tracking, 
+  social media notification, promotional email, delivery tracking, 
   or informational email that doesn't expect a response.
 
 The user's email address is: {user_email}
+The user's name is: Dongjie Wang
 
 {emails_block}
 
@@ -70,7 +79,7 @@ Respond ONLY with a valid JSON array (one object per email, in the SAME order). 
     "email_id": "the_email_id",
     "needs_reply": true/false,
     "priority": "high/medium/low",
-    "category": "question/request/notification/newsletter/auto-reply/social/promotion/other",
+    "category": "question/request/notification/newsletter/auto-reply/social/promotion/calendar/other",
     "summary": "一句话中文摘要",
     "detail_summary": "详细中文摘要，引用1-2句关键原文",
     "reason": "中文原因说明"
