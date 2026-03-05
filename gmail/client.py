@@ -283,7 +283,11 @@ class GmailClient:
         sender_name, sender_email = self._parse_sender(sender_full)
 
         to_full = headers.get("to", "")
+        cc_full = headers.get("cc", "")
         recipients = [r.strip() for r in to_full.split(",") if r.strip()]
+        # Include CC in recipients for Reply All
+        if cc_full:
+            recipients += [r.strip() for r in cc_full.split(",") if r.strip()]
 
         label_ids = raw.get("labelIds", [])
 
@@ -321,6 +325,10 @@ class GmailClient:
             if orig_email:
                 original_sender = orig_name
                 original_sender_email = orig_email
+            # Extract original To/CC from forwarded body for Reply All
+            fwd_recipients = self._extract_forwarded_recipients(body_text)
+            if fwd_recipients:
+                recipients = fwd_recipients
 
         return Email(
             id=raw["id"],
@@ -434,6 +442,36 @@ class GmailClient:
                 elif len(groups) == 1:
                     return "", groups[0].strip()
         return "", ""
+
+    @staticmethod
+    def _extract_forwarded_recipients(body_text: str) -> list[str]:
+        """Extract original To and CC recipients from a forwarded email body.
+        
+        Looks for patterns like:
+        - 'To: user1@example.com, Name <user2@example.com>'
+        - 'Cc: user3@example.com'
+        """
+        recipients = []
+        
+        # Extract To: line from forwarded body
+        to_match = re.search(
+            r'(?:^|\n)\s*To:\s*(.+?)(?:\n\s*(?:Cc|CC|Subject|Date|From):)',
+            body_text, re.IGNORECASE | re.DOTALL
+        )
+        if to_match:
+            to_line = to_match.group(1).strip()
+            recipients.extend([r.strip() for r in to_line.split(",") if r.strip()])
+        
+        # Extract Cc: line from forwarded body
+        cc_match = re.search(
+            r'(?:^|\n)\s*(?:Cc|CC):\s*(.+?)(?:\n\s*(?:Subject|Date|From|To):)',
+            body_text, re.IGNORECASE | re.DOTALL
+        )
+        if cc_match:
+            cc_line = cc_match.group(1).strip()
+            recipients.extend([r.strip() for r in cc_line.split(",") if r.strip()])
+        
+        return recipients
 
     @staticmethod
     def _strip_html_to_text(html: str) -> str:
