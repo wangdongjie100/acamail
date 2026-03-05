@@ -36,7 +36,7 @@ Formatting rules (CRITICAL):
   Next line: empty (\n\n) 
   Next line: Sign-off (e.g., "Best regards,")
   Next line: blank line (\n)
-  Last line: "Prof. Dongjie Wang"
+  Last line: "Dongjie Wang"
 
 Original Email:
 - From: {sender} <{sender_email}>
@@ -47,9 +47,9 @@ Original Email:
 
 Respond ONLY with valid JSON. Use \n for line breaks. NO HTML tags:
 {{
-  "positive_reply": "Dear ...,\n\nThank you for ...\n\nI would be happy to ...\n\nBest regards,\n\nProf. Dongjie Wang",
-  "negative_reply": "Dear ...,\n\n...\n\nBest regards,\n\nProf. Dongjie Wang",
-  "neutral_reply": "Dear ...,\n\n...\n\nBest regards,\n\nProf. Dongjie Wang"
+  "positive_reply": "Dear ...,\n\nThank you for ...\n\nI would be happy to ...\n\nBest regards,\n\nDongjie Wang",
+  "negative_reply": "Dear ...,\n\n...\n\nBest regards,\n\nDongjie Wang",
+  "neutral_reply": "Dear ...,\n\n...\n\nBest regards,\n\nDongjie Wang"
 }}
 """
 
@@ -83,15 +83,38 @@ Tone and style:
 
 Formatting rules (CRITICAL):
 - Do NOT use any HTML tags (no <br>, <p>, etc.). Use ONLY \n characters for line breaks.
-- Sign as: Prof. Dongjie Wang
+- Sign as: Dongjie Wang
 - Separate paragraphs with \n\n
 
 Respond ONLY with valid JSON. Use \n for line breaks. NO HTML tags:
 {{
-  "positive_reply": "Dear ...,\n\n...\n\nBest regards,\n\nProf. Dongjie Wang",
-  "negative_reply": "Dear ...,\n\n...\n\nBest regards,\n\nProf. Dongjie Wang",
-  "neutral_reply": "Dear ...,\n\n...\n\nBest regards,\n\nProf. Dongjie Wang"
+  "positive_reply": "Dear ...,\n\n...\n\nBest regards,\n\nDongjie Wang",
+  "negative_reply": "Dear ...,\n\n...\n\nBest regards,\n\nDongjie Wang",
+  "neutral_reply": "Dear ...,\n\n...\n\nBest regards,\n\nDongjie Wang"
 }}
+"""
+
+COMPOSE_EMAIL_PROMPT = """\
+You are an email drafting assistant for Dongjie Wang.
+
+The user wants to compose a new email.
+
+Recipient: {to_name} <{to_email}>
+Subject: {subject}
+
+User's instructions (may be in Chinese):
+{instructions}
+
+Write a professional, academic-tone email in English based on the user's instructions.
+
+Rules:
+- Use "Dear [Recipient Name]," as greeting
+- Formal, academic, professional tone
+- Sign as "Dongjie Wang"
+- Use "Best regards," as sign-off
+- Keep it concise and clear
+
+Respond ONLY with the email body (no subject line, no JSON). Start from "Dear ..." and end with "Dongjie Wang".
 """
 
 
@@ -117,6 +140,31 @@ class ReplyGenerator:
         )
 
         return self._call_ai(prompt, email.id)
+
+    def compose_email(
+        self, to_name: str, to_email: str, subject: str, instructions: str
+    ) -> str:
+        """Generate a new email draft based on user instructions."""
+        prompt = COMPOSE_EMAIL_PROMPT.format(
+            to_name=to_name,
+            to_email=to_email,
+            subject=subject,
+            instructions=instructions,
+        )
+        try:
+            response = self._client.models.generate_content(
+                model=self._model,
+                contents=prompt,
+            )
+            draft = response.text.strip()
+            # Remove markdown fences if present
+            if draft.startswith("```"):
+                lines = draft.split("\n")
+                draft = "\n".join(lines[1:-1])
+            return draft
+        except Exception:
+            logger.exception("Compose email generation failed")
+            return "⚠️ Email generation failed. Please try again."
 
     def regenerate_with_instructions(
         self,
@@ -156,7 +204,7 @@ class ReplyGenerator:
                 lines = raw_text.split("\n")
                 raw_text = "\n".join(lines[1:-1])
 
-            data = json.loads(raw_text)
+            data = json.loads(raw_text, strict=False)
 
             return ReplyOptions(
                 email_id=email_id,

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytz
 
@@ -49,13 +51,27 @@ from bot.keyboards import (
 )
 from config import Config
 from gmail.client import GmailClient
-from gmail.models import ClassificationResult, Email, ReplyOptions
+from gmail.models import CalendarInvite, ClassificationResult, Email, ReplyOptions
 from storage.database import Database
 
 logger = logging.getLogger(__name__)
 
-# Conversation states for custom instructions
+# Conversation states
 WAITING_CUSTOM_INSTRUCTIONS = 1
+WAITING_COMPOSE_TO = 2
+WAITING_COMPOSE_SUBJECT = 3
+WAITING_COMPOSE_BODY = 4
+
+# Calendar callback prefixes
+PREFIX_CAL_ACCEPT = "cal_accept"
+PREFIX_CAL_DECLINE = "cal_decline"
+PREFIX_CAL_TENTATIVE = "cal_tentative"
+
+# Compose callback prefixes
+PREFIX_COMPOSE_SEND = "compose_send"
+PREFIX_COMPOSE_REGEN = "compose_regen"
+PREFIX_COMPOSE_CANCEL = "compose_cancel"
+
 
 
 class BotHandlers:
@@ -784,15 +800,313 @@ class BotHandlers:
             return None
 
     # ──────────────────────────────────────────────────────────
+    # Compose email
+    # ──────────────────────────────────────────────────────────
+
+    def _load_contacts(self) -> dict[str, str]:
+        """Load contacts from contacts.json."""
+        contacts_path = Path(__file__).resolve().parent.parent / "contacts.json"
+        if not contacts_path.exists():
+            return {}
+        try:
+            with open(contacts_path, "r") as f:
+                data = json.load(f)
+            return data.get("contacts", {})
+        except Exception:
+            logger.warning("Failed to load contacts.json")
+            return {}
+
+    def _find_contact(self, query: str) -> tuple[str, str] | None:
+        """Find a contact by name (case-insensitive, partial match)."""
+        contacts = self._load_contacts()
+        query_lower = query.lower().strip()
+
+        # Check if it's an email address directly
+        if "@" in query:
+            return (query, query)
+
+        # Exact match first
+        for name, email in contacts.items():
+            if name.lower() == query_lower:
+                return (name, email)
+
+        # Partial match
+        matches = []
+        for name, email in contacts.items():
+            if query_lower in name.lower():
+                matches.append((name, email))
+
+        if len(matches) == 1:
+            return matches[0]
+        elif len(matches) > 1:
+            return None  # Ambiguous
+        return None
+
+    async def cmd_compose(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle /compose — start composing a new email."""
+        if not self._is_authorized(update):
+            return ConversationHandler.END
+
+        await update.message.reply_text(
+            "✏️ *写新邮件*\n\n"
+            "请输入收件人（名字或邮箱地址）：\n"
+            "💡 支持模糊搜索，输入名字的一部分即可匹配白名单",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return WAITING_COMPOSE_TO
+
+    async def handle_compose_to(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle recipient input."""
+        user_input = update.message.text.strip()
+        contact = self._find_contact(user_input)
+
+        if contact:
+            name, email = contact
+            context.user_data["compose_to_name"] = name
+            context.user_data["compose_to_email"] = email
+            await update.message.reply_text(
+                f"📧 收件人: *{name}* (`{email}`)\n\n"
+                "请输入邮件主题：",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return WAITING_COMPOSE_SUBJECT
+        elif "@" in user_input:
+            # Direct email address
+            context.user_data["compose_to_name"] = user_input.split("@")[0]
+            context.user_data["compose_to_email"] = user_input
+            await update.message.reply_text(
+                f"📧 收件人: `{user_input}`\n\n"
+                "请输入邮件主题：",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return WAITING_COMPOSE_SUBJECT
+        else:
+            # Try fuzzy match
+            contacts = self._load_contacts()
+            matches = [(n, e) for n, e in contacts.items() if user_input.lower() in n.lower()]
+            if matches:
+                match_text = "\n".join(f"  • {n} (`{e}`)" for n, e in matches)
+                await update.message.reply_text(
+                    f"找到多个匹配，请输入更精确的名字或直接输入邮箱：\n{match_text}",
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ 未找到联系人，请输入完整邮箱地址：",
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+            return WAITING_COMPOSE_TO
+
+    def _translate_subject(self, subject: str) -> str:
+        """Translate subject to English if it contains Chinese characters."""
+        import re
+        if not re.search(r'[\u4e00-\u9fff]', subject):
+            return subject  # Already English
+        try:
+            response = self.reply_gen._client.models.generate_content(
+                model=self.reply_gen._model,
+                contents=f"Translate this email subject to professional English. Return ONLY the translated subject, nothing else:\n{subject}",
+            )
+            return response.text.strip().strip('"').strip("'")
+        except Exception:
+            return subject  # Fallback to original
+
+    async def handle_compose_subject(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle subject input."""
+        raw_subject = update.message.text.strip()
+        context.user_data["compose_subject_raw"] = raw_subject
+        # Translate if Chinese
+        translated = self._translate_subject(raw_subject)
+        context.user_data["compose_subject"] = translated
+        if translated != raw_subject:
+            await update.message.reply_text(
+                f"📌 Subject: *{translated}*\n\n"
+                "📝 请输入邮件内容要点（中文也行，AI 会生成英文邮件）：",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            await update.message.reply_text(
+                "📝 请输入邮件内容要点（中文也行，AI 会生成英文邮件）：",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        return WAITING_COMPOSE_BODY
+
+    async def handle_compose_body(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle body input — generate AI draft."""
+        instructions = update.message.text.strip()
+        to_name = context.user_data.get("compose_to_name", "")
+        to_email = context.user_data.get("compose_to_email", "")
+        subject = context.user_data.get("compose_subject", "")
+
+        await update.message.reply_text("🤖 正在生成邮件草稿...")
+
+        draft = self.reply_gen.compose_email(to_name, to_email, subject, instructions)
+        context.user_data["compose_draft"] = draft
+
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("✅ 发送", callback_data=f"{PREFIX_COMPOSE_SEND}:send"),
+                InlineKeyboardButton("🔄 重写", callback_data=f"{PREFIX_COMPOSE_REGEN}:regen"),
+            ],
+            [
+                InlineKeyboardButton("❌ 取消", callback_data=f"{PREFIX_COMPOSE_CANCEL}:cancel"),
+            ],
+        ])
+
+        preview = (
+            f"📧 *新邮件预览*\n"
+            f"━━━━━━━━━━━━━━━\n"
+            f"*To:* `{to_email}`\n"
+            f"*Subject:* {subject}\n"
+            f"━━━━━━━━━━━━━━━\n\n"
+            f"{draft}"
+        )
+        for part in self._split_message(preview):
+            await update.message.reply_text(
+                part,
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=keyboard if part == self._split_message(preview)[-1] else None,
+            )
+
+        return ConversationHandler.END
+
+    async def handle_compose_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle compose send/regen/cancel callbacks."""
+        query = update.callback_query
+        await query.answer()
+
+        data = query.data or ""
+        prefix = data.split(":")[0]
+
+        if prefix == PREFIX_COMPOSE_SEND:
+            to_email = context.user_data.get("compose_to_email", "")
+            subject = context.user_data.get("compose_subject", "")
+            draft = context.user_data.get("compose_draft", "")
+
+            try:
+                self.gmail.send_new_email(to_email, subject, draft)
+                await query.edit_message_text(
+                    f"✅ 邮件已发送至 `{to_email}`！",
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+            except Exception as e:
+                logger.exception("Failed to send compose email")
+                await query.edit_message_text(f"❌ 发送失败: {e}")
+
+        elif prefix == PREFIX_COMPOSE_REGEN:
+            to_name = context.user_data.get("compose_to_name", "")
+            to_email = context.user_data.get("compose_to_email", "")
+            subject = context.user_data.get("compose_subject", "")
+
+            await query.edit_message_text("🔄 正在重新生成...")
+
+            draft = self.reply_gen.compose_email(to_name, to_email, subject, "重新生成上一封邮件的内容")
+            context.user_data["compose_draft"] = draft
+
+            from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+            keyboard = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("✅ 发送", callback_data=f"{PREFIX_COMPOSE_SEND}:send"),
+                    InlineKeyboardButton("🔄 重写", callback_data=f"{PREFIX_COMPOSE_REGEN}:regen"),
+                ],
+                [InlineKeyboardButton("❌ 取消", callback_data=f"{PREFIX_COMPOSE_CANCEL}:cancel")],
+            ])
+
+            await query.edit_message_text(
+                f"📧 *重新生成的草稿:*\n\n{draft}",
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=keyboard,
+            )
+
+        elif prefix == PREFIX_COMPOSE_CANCEL:
+            await query.edit_message_text("❌ 已取消写邮件。")
+
+    # ──────────────────────────────────────────────────────────
+    # Calendar invite handling
+    # ──────────────────────────────────────────────────────────
+
+    async def handle_calendar_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle calendar accept/decline/tentative callbacks."""
+        query = update.callback_query
+        await query.answer()
+
+        data = query.data or ""
+        parts = data.split(":")
+        if len(parts) < 2:
+            return
+
+        prefix = parts[0]
+        email_id = parts[1]
+
+        response_map = {
+            PREFIX_CAL_ACCEPT: "ACCEPTED",
+            PREFIX_CAL_DECLINE: "DECLINED",
+            PREFIX_CAL_TENTATIVE: "TENTATIVE",
+        }
+
+        response = response_map.get(prefix)
+        if not response:
+            return
+
+        email = self._get_cached_email(email_id)
+        if not email or not email.calendar_invite:
+            await query.edit_message_text("⚠️ 找不到日历邀请信息。")
+            return
+
+        response_label = {"ACCEPTED": "✅ 已接受", "DECLINED": "❌ 已拒绝", "TENTATIVE": "❓ 暂定"}
+        try:
+            self.gmail.respond_to_calendar_invite(
+                email, response, email.calendar_invite.ics_data
+            )
+            await query.edit_message_text(
+                f"{response_label[response]}\n\n"
+                f"📅 {email.calendar_invite.summary}\n"
+                f"🗓 {email.calendar_invite.start_time}",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        except Exception as e:
+            logger.exception("Calendar response failed")
+            await query.edit_message_text(f"⚠️ 回应失败: {e}")
+
+    # ──────────────────────────────────────────────────────────
     # Registration
     # ──────────────────────────────────────────────────────────
 
     def register(self, application: Application) -> None:
         """Register all handlers with the Telegram Application."""
-        # Conversation handler for custom instructions
+
+        # Compose conversation handler
+        compose_handler = ConversationHandler(
+            entry_points=[
+                CommandHandler("compose", self.cmd_compose),
+            ],
+            states={
+                WAITING_COMPOSE_TO: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_compose_to),
+                ],
+                WAITING_COMPOSE_SUBJECT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_compose_subject),
+                ],
+                WAITING_COMPOSE_BODY: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_compose_body),
+                ],
+            },
+            fallbacks=[
+                CommandHandler("check", self.cmd_check),
+                CommandHandler("compose", self.cmd_compose),
+                CommandHandler("start", self.cmd_start),
+                CommandHandler("help", self.cmd_help),
+            ],
+            per_message=False,
+        )
+
+        # Conversation handler for custom instructions (reply flow)
+        # Only match reply-related callbacks, not compose/calendar
+        _reply_pattern = f"^(?!{PREFIX_COMPOSE_SEND}|{PREFIX_COMPOSE_REGEN}|{PREFIX_COMPOSE_CANCEL}|{PREFIX_CAL_ACCEPT}|{PREFIX_CAL_DECLINE}|{PREFIX_CAL_TENTATIVE}).*"
         conv_handler = ConversationHandler(
             entry_points=[
-                CallbackQueryHandler(self.handle_callback),
+                CallbackQueryHandler(self.handle_callback, pattern=_reply_pattern),
             ],
             states={
                 WAITING_CUSTOM_INSTRUCTIONS: [
@@ -808,6 +1122,7 @@ class BotHandlers:
                 CommandHandler("start", self.cmd_start),
                 CommandHandler("help", self.cmd_help),
                 CommandHandler("status", self.cmd_status),
+                CommandHandler("compose", self.cmd_compose),
             ],
             per_message=False,
         )
@@ -817,4 +1132,18 @@ class BotHandlers:
         application.add_handler(CommandHandler("check", self.cmd_check))
         application.add_handler(CommandHandler("digest", self.cmd_digest))
         application.add_handler(CommandHandler("status", self.cmd_status))
+        application.add_handler(compose_handler)
         application.add_handler(conv_handler)
+
+        # Compose send/regen/cancel callbacks
+        application.add_handler(CallbackQueryHandler(
+            self.handle_compose_callback,
+            pattern=f"^({PREFIX_COMPOSE_SEND}|{PREFIX_COMPOSE_REGEN}|{PREFIX_COMPOSE_CANCEL}):.*",
+        ))
+
+        # Calendar response callbacks
+        application.add_handler(CallbackQueryHandler(
+            self.handle_calendar_callback,
+            pattern=f"^({PREFIX_CAL_ACCEPT}|{PREFIX_CAL_DECLINE}|{PREFIX_CAL_TENTATIVE}):.*",
+        ))
+

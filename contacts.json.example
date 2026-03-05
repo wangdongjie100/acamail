@@ -1,0 +1,8 @@
+{
+  "contacts": {
+    "John Smith": "jsmith@example.edu",
+    "Jane Doe": "jdoe@example.edu",
+    "Department Admin": "admin@example.edu"
+  },
+  "_note": "Add your frequent contacts here. Name → email mapping. The bot matches names case-insensitively and supports partial matching."
+}

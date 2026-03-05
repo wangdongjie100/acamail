@@ -58,6 +58,104 @@ class GmailClient:
         return self._parse_message(raw)
 
     # ──────────────────────────────────────────────────────────
+    # Compose / Send new email
+    # ──────────────────────────────────────────────────────────
+
+    def send_new_email(self, to_email: str, subject: str, body: str) -> str:
+        """Send a brand-new email (not a reply)."""
+        html_body = self._build_reply_html(body)
+        mime = MIMEText(html_body, "html", "utf-8")
+        mime["To"] = to_email
+        mime["Subject"] = subject
+        mime["From"] = Config.USER_EMAIL
+
+        raw_msg = base64.urlsafe_b64encode(mime.as_bytes()).decode("ascii")
+        sent = (
+            self._service.users()
+            .messages()
+            .send(userId=self._user, body={"raw": raw_msg})
+            .execute()
+        )
+        msg_id = sent.get("id", "")
+        logger.info("New email sent – id=%s to=%s subject=%s", msg_id, to_email, subject)
+        return msg_id
+
+    # ──────────────────────────────────────────────────────────
+    # Calendar invite response
+    # ──────────────────────────────────────────────────────────
+
+    def respond_to_calendar_invite(
+        self, original: Email, response: str, ics_data: str
+    ) -> str:
+        """Respond to a calendar invite (ACCEPTED / DECLINED / TENTATIVE).
+
+        Sends a reply with an updated ICS attachment indicating the response.
+        """
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.base import MIMEBase
+        from email import encoders
+
+        # Build multipart message with ICS response
+        msg = MIMEMultipart("mixed")
+        msg["To"] = original.reply_to_email
+        msg["Subject"] = (
+            original.subject
+            if original.subject.lower().startswith("re:")
+            else f"Re: {original.subject}"
+        )
+        msg["In-Reply-To"] = original.message_id_header
+        msg["References"] = (
+            f"{original.references} {original.message_id_header}".strip()
+        )
+
+        # Update the ICS with the response
+        try:
+            import icalendar
+
+            cal = icalendar.Calendar.from_ical(ics_data)
+            for component in cal.walk():
+                if component.name == "VEVENT":
+                    # Add attendee response
+                    component.add("STATUS", response)
+            updated_ics = cal.to_ical()
+        except Exception:
+            logger.warning("Could not update ICS, sending text response only")
+            updated_ics = None
+
+        # Add text body
+        response_text = {
+            "ACCEPTED": "I have accepted this calendar invitation.",
+            "DECLINED": "I have declined this calendar invitation.",
+            "TENTATIVE": "I have tentatively accepted this calendar invitation.",
+        }.get(response, "Calendar response sent.")
+
+        text_part = MIMEText(response_text, "plain", "utf-8")
+        msg.attach(text_part)
+
+        # Attach updated ICS if available
+        if updated_ics:
+            ics_part = MIMEBase("text", "calendar", method="REPLY")
+            ics_part.set_payload(updated_ics)
+            encoders.encode_base64(ics_part)
+            ics_part.add_header("Content-Disposition", "attachment", filename="invite.ics")
+            msg.attach(ics_part)
+
+        raw_msg = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
+        body = {
+            "raw": raw_msg,
+            "threadId": original.thread_id,
+        }
+        sent = (
+            self._service.users()
+            .messages()
+            .send(userId=self._user, body=body)
+            .execute()
+        )
+        msg_id = sent.get("id", "")
+        logger.info("Calendar response sent – %s to=%s", response, original.reply_to_email)
+        return msg_id
+
+    # ──────────────────────────────────────────────────────────
     # Reply / Send
     # ──────────────────────────────────────────────────────────
 

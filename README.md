@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">📧 AcaMail — AI Email Assistant for Academics</h1>
   <p align="center">
-    <em>An intelligent Telegram bot that monitors your Gmail, classifies emails, and drafts professional replies — built for professors, researchers, and academics who receive 100+ emails daily.</em>
+    <em>An intelligent Telegram bot that monitors your Gmail, classifies emails, drafts professional replies, composes new emails, and handles calendar invitations — built for professors, researchers, and academics who receive 100+ emails daily.</em>
   </p>
   <p align="center">
     <a href="#-features">Features</a> •
@@ -30,9 +30,21 @@
 - **Bilingual** — Chinese summaries + English replies (perfect for international academics)
 - **Custom instructions** — Tell the AI (in Chinese) what to change, and it rewrites in English
 
+### ✏️ Compose New Emails
+- **AI-powered drafting** — Write email instructions in Chinese, get professional English emails
+- **Contact whitelist** — Fuzzy name matching against your saved contacts
+- **Subject translation** — Chinese subjects are automatically translated to English
+- **Preview & confirm** — Review AI draft before sending, with regenerate option
+
+### 📅 Calendar Invite Handling
+- **Auto-detection** — Detects calendar invitations (`.ics`) in incoming emails
+- **One-click response** — Accept / Decline / Tentative directly from Telegram
+- **Event details** — Displays organizer, time, location, and description
+
 ### 📱 Telegram-Powered Workflow
 - **Interactive inbox** — Browse, preview, and reply to emails from your phone
 - **Reply / Reply All** — Choose to reply to sender only or CC all recipients
+- **Compose & send** — Write new emails to anyone via `/compose` command
 - **Persistent queue** — Unprocessed emails carry over between sessions
 - **Daily digest** — Automatic email report at configurable times (default: 12:00 & 21:00)
 
@@ -144,18 +156,19 @@ sequenceDiagram
 acamail/
 ├── main.py                 # Entry point
 ├── config.py               # Configuration management (.env loading)
+├── contacts.json           # Contact whitelist (name → email mapping)
 ├── requirements.txt        # Python dependencies
 ├── ai/
 │   ├── classifier.py       # Email classification (batch + single + pre-filter)
-│   └── reply_generator.py  # Reply draft generation (3 tones + custom)
+│   └── reply_generator.py  # Reply draft generation (3 tones + custom + compose)
 ├── bot/
-│   ├── handlers.py         # Telegram command & callback handlers
+│   ├── handlers.py         # Telegram command & callback handlers (reply, compose, calendar)
 │   ├── keyboards.py        # Inline keyboard definitions
 │   └── formatter.py        # Message formatting (summary, detail, digest)
 ├── gmail/
 │   ├── auth.py             # OAuth2 authentication
-│   ├── client.py           # Gmail API client (fetch, send, reply-all)
-│   └── models.py           # Data models (Email, ClassificationResult, etc.)
+│   ├── client.py           # Gmail API client (fetch, send, reply-all, compose, calendar)
+│   └── models.py           # Data models (Email, CalendarInvite, etc.)
 ├── scheduler/
 │   └── jobs.py             # Scheduled email push (APScheduler)
 └── storage/
@@ -240,6 +253,7 @@ python main.py
 | Command | Description |
 |---------|-------------|
 | `/check` | 📬 Check for new emails and classify them |
+| `/compose` | ✏️ Compose a new email (AI-assisted, contact fuzzy search) |
 | `/digest` | 📋 View today's email processing record (replied, skipped, pending) |
 | `/status` | 📊 View system status (uptime, email counts, last push) |
 | `/help` | 📖 Usage guide with all commands and workflow |

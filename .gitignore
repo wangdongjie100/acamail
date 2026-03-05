@@ -4,6 +4,7 @@ credentials.json
 client_secret*.json
 token.json
 *_token.json
+contacts.json
 
 # Python
 __pycache__/

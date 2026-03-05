@@ -98,6 +98,7 @@ def main() -> None:
         from telegram import BotCommand
         commands = [
             BotCommand("check", "📬 查收新邮件并分类"),
+            BotCommand("compose", "✏️ 写新邮件"),
             BotCommand("digest", "📋 查看今日邮件处理记录"),
             BotCommand("status", "📊 查看系统状态"),
             BotCommand("help", "📖 使用帮助"),

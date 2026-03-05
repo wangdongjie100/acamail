@@ -29,6 +29,8 @@ class Email:
     # For forwarded emails: the original sender
     original_sender: str = ""
     original_sender_email: str = ""
+    # Calendar invite data (ICS)
+    calendar_invite: Optional["CalendarInvite"] = None
 
     @property
     def is_forwarded(self) -> bool:
@@ -82,3 +84,16 @@ class ReplyOptions:
     negative_reply: str
     neutral_reply: str = ""
     user_instructions: Optional[str] = None  # What the user asked to modify
+
+
+@dataclass
+class CalendarInvite:
+    """Parsed calendar invite from an email."""
+
+    summary: str  # Event title
+    organizer: str  # Organizer name/email
+    start_time: str  # Display string
+    end_time: str  # Display string
+    location: str = ""
+    description: str = ""
+    ics_data: str = ""  # Raw ICS data for responding
