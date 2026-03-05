@@ -1,0 +1,14 @@
+# Override .gitignore for Cloud Build — we NEED .env and credentials in the container
+.git
+.gitignore
+.env.example
+.gemini/
+__pycache__/
+*.pyc
+*.db
+docs/
+README.md
+LICENSE
+venv/
+.venv/
+deploy.sh

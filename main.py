@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from telegram.ext import ApplicationBuilder
 
@@ -26,6 +29,21 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     """Application entry point."""
+
+    # 0. Start health check server immediately (Cloud Run needs a listening port ASAP)
+    port = int(os.getenv("PORT", "8080"))
+
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK")
+        def log_message(self, *args):
+            pass
+
+    health_server = HTTPServer(("", port), HealthHandler)
+    threading.Thread(target=health_server.serve_forever, daemon=True).start()
+    logger.info("Health check listening on port %d ✓", port)
 
     # 1. Validate configuration
     errors = Config.validate()

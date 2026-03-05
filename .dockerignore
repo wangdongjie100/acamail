@@ -1,0 +1,13 @@
+.git
+.gitignore
+.env.example
+.gemini/
+__pycache__/
+*.pyc
+*.db
+docs/
+README.md
+LICENSE
+.dockerignore
+venv/
+.venv/
