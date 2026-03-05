@@ -24,13 +24,17 @@ You are an intelligent email assistant for Dongjie Wang. Analyze the following e
 Rules for determining "needs_reply":
 - TRUE if: the email asks a question directly to the user, requests action, contains a task assignment, 
   asks for confirmation/approval, or is a meaningful conversation that expects a response.
-- TRUE if: the email body mentions "Dongjie Wang" or "Dongjie" — this means the user is directly involved 
-  in the conversation thread and should respond. Mark as HIGH priority.
+- TRUE if: the email is personally addressed to the user (e.g., "Dear Dr. Wang", "Dear Dongjie", 
+  "Hi Prof. Wang") — personal emails always deserve a reply. Mark as HIGH priority.
+- TRUE if: the email body mentions the user by any name variation: "Dongjie Wang", "Dongjie", 
+  "Dr. Wang", "Prof. Wang", "Professor Wang" — this means the user is directly involved.
+- TRUE if: the email is a progress update, status report, or informational message from a student, 
+  colleague, or collaborator — the user should acknowledge it.
 - TRUE if: the email is about scheduling a meeting, calendar invitation, or asking for availability. 
   Mark category as "calendar" and priority as HIGH.
 - FALSE if: the email is a notification/alert (CI/CD, GitHub, monitoring), newsletter/marketing, 
   auto-generated system email, social media notification, promotional email, delivery tracking, 
-  or informational email that doesn't expect a response.
+  or mass email that doesn't expect a personal response.
 
 The user's email address is: {user_email}
 The user's name is: Dongjie Wang
@@ -60,13 +64,17 @@ You are an intelligent email assistant for Dongjie Wang. Analyze ALL of the foll
 Rules for determining "needs_reply":
 - TRUE if: the email asks a question directly to the user, requests action, contains a task assignment, 
   asks for confirmation/approval, or is a meaningful conversation that expects a response.
-- TRUE if: the email body mentions "Dongjie Wang" or "Dongjie" — this means the user is directly involved 
-  in the conversation thread and should respond. Mark as HIGH priority.
+- TRUE if: the email is personally addressed to the user (e.g., "Dear Dr. Wang", "Dear Dongjie", 
+  "Hi Prof. Wang") — personal emails always deserve a reply. Mark as HIGH priority.
+- TRUE if: the email body mentions the user by any name variation: "Dongjie Wang", "Dongjie", 
+  "Dr. Wang", "Prof. Wang", "Professor Wang" — this means the user is directly involved.
+- TRUE if: the email is a progress update, status report, or informational message from a student, 
+  colleague, or collaborator — the user should acknowledge it.
 - TRUE if: the email is about scheduling a meeting, calendar invitation, or asking for availability. 
   Mark category as "calendar" and priority as HIGH.
 - FALSE if: the email is a notification/alert, newsletter/marketing, auto-generated system email, 
   social media notification, promotional email, delivery tracking, 
-  or informational email that doesn't expect a response.
+  or mass email that doesn't expect a personal response.
 
 The user's email address is: {user_email}
 The user's name is: Dongjie Wang
