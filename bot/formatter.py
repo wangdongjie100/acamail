@@ -233,6 +233,18 @@ def format_daily_digest(digest: dict, date_label: str) -> str:
                 lines.append(f"  💡 {_escape(reason)}")
             lines.append("")
 
+    # Non-actionable emails
+    non_actionable_list = digest.get("non_actionable_list", [])
+    if non_actionable_list:
+        lines.append(f"━━ 📭 无需处理 ({len(non_actionable_list)} 封) ━━")
+        for row in non_actionable_list:
+            subject = row.get("subject", "")
+            sender = row.get("sender", "") or row.get("sender_email", "")
+            summary = row.get("summary", "")
+            lines.append(f"• <b>{_escape(subject)}</b>")
+            lines.append(f"  👤 {_escape(sender)} — {_escape(summary)}")
+        lines.append("")
+
     if total == 0:
         lines.append("📭 今日暂无邮件。")
 

@@ -33,19 +33,19 @@ class GmailClient:
     def get_emails_since(
         self, since: datetime, max_results: int = 50
     ) -> list[Email]:
-        """Fetch emails received after *since* (UTC)."""
+        """Fetch Primary inbox emails received after *since* (UTC)."""
         # Gmail query uses epoch seconds
         after_ts = int(since.timestamp())
-        query = f"after:{after_ts}"
+        query = f"after:{after_ts} category:primary"
         return self._search_emails(query, max_results)
 
     def get_unread_emails(self, max_results: int = 50) -> list[Email]:
-        """Fetch unread emails in INBOX."""
-        return self._search_emails("is:unread in:inbox", max_results)
+        """Fetch unread Primary emails in INBOX."""
+        return self._search_emails("is:unread in:inbox category:primary", max_results)
 
     def get_latest_emails(self, max_results: int = 3) -> list[Email]:
-        """Fetch the N most recent emails in INBOX."""
-        return self._search_emails("in:inbox", max_results)
+        """Fetch the N most recent Primary emails in INBOX."""
+        return self._search_emails("in:inbox category:primary", max_results)
 
     def get_email_detail(self, msg_id: str) -> Email:
         """Fetch full detail of a single message."""

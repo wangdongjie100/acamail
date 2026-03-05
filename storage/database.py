@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+import pytz
 
 from config import Config
 
 logger = logging.getLogger(__name__)
+
+
+def _now_local() -> datetime:
+    """Return current time in the user's configured timezone."""
+    tz = pytz.timezone(Config.TIMEZONE)
+    return datetime.now(timezone.utc).astimezone(tz)
 
 
 class Database:
@@ -83,9 +91,11 @@ class Database:
         """Record a push event."""
         conn = self._connect()
         try:
+            # Store in local timezone for correct date grouping
+            local_time = push_time.astimezone(pytz.timezone(Config.TIMEZONE))
             conn.execute(
                 "INSERT INTO push_log (push_time, email_count, actionable_count) VALUES (?, ?, ?)",
-                (push_time.isoformat(), email_count, actionable_count),
+                (local_time.isoformat(), email_count, actionable_count),
             )
             conn.commit()
         finally:
@@ -145,8 +155,8 @@ class Database:
                     subject,
                     sender,
                     sender_email,
-                    received_at.isoformat() if received_at else None,
-                    datetime.utcnow().isoformat(),
+                    received_at.astimezone(pytz.timezone(Config.TIMEZONE)).isoformat() if received_at else _now_local().isoformat(),
+                    _now_local().isoformat(),
                     int(needs_reply),
                     priority,
                     category,
@@ -245,6 +255,7 @@ class Database:
                 "replied_list": replied,
                 "skipped_list": skipped,
                 "pending_list": pending,
+                "non_actionable_list": non_actionable,
             }
         finally:
             conn.close()
