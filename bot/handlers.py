@@ -639,7 +639,7 @@ class BotHandlers:
     async def push_emails(self, application: Application) -> None:
         """Scheduled job: daily digest — fetch new emails, then send summary."""
         # Cleanup old records (30+ days)
-        self.db.cleanup_old_records(days=30)
+        self.db.cleanup_old_records(days=365)
         
         # Step 1: Fetch and classify any new emails since last push
         last_push = self.db.get_last_push_time()
