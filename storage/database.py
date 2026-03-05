@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -282,5 +282,25 @@ class Database:
                 (key, value),
             )
             conn.commit()
+        finally:
+            conn.close()
+
+    def cleanup_old_records(self, days: int = 30) -> int:
+        """Delete records older than `days` days. Returns number of deleted rows."""
+        cutoff = _now_local() - timedelta(days=days)
+        cutoff_str = cutoff.strftime("%Y-%m-%d")
+        conn = self._connect()
+        try:
+            c1 = conn.execute(
+                "DELETE FROM email_status WHERE received_at < ?", (cutoff_str,)
+            )
+            c2 = conn.execute(
+                "DELETE FROM push_log WHERE push_time < ?", (cutoff_str,)
+            )
+            conn.commit()
+            total = c1.rowcount + c2.rowcount
+            if total > 0:
+                logger.info("Cleaned up %d old records (before %s)", total, cutoff_str)
+            return total
         finally:
             conn.close()
