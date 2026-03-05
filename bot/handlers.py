@@ -234,10 +234,20 @@ class BotHandlers:
             since = last_push
             since_label = self._to_local(last_push).strftime("%m-%d %H:%M")
 
-        try:
-            actionable, non_actionable = self._fetch_and_classify(since)
-        except Exception:
-            logger.exception("Failed to fetch and classify emails")
+        # Retry once on failure (handles token refresh / cold start transient errors)
+        last_err = None
+        for attempt in range(2):
+            try:
+                actionable, non_actionable = self._fetch_and_classify(since)
+                break
+            except Exception as e:
+                last_err = e
+                if attempt == 0:
+                    logger.warning("Fetch attempt 1 failed, retrying: %s", e)
+                    import time
+                    time.sleep(1)
+        else:
+            logger.exception("Failed to fetch and classify emails after retry", exc_info=last_err)
             await update.message.reply_text("⚠️ 获取邮件时出错，请稍后重试。")
             return
 
@@ -648,12 +658,19 @@ class BotHandlers:
         else:
             since = last_push
 
-        try:
-            actionable, non_actionable = self._fetch_and_classify(since)
-        except Exception:
-            logger.exception("Scheduled push: fetch failed")
-            # Continue to still show digest from DB
-            actionable, non_actionable = [], []
+        actionable, non_actionable = [], []
+        for attempt in range(2):
+            try:
+                actionable, non_actionable = self._fetch_and_classify(since)
+                break
+            except Exception as e:
+                if attempt == 0:
+                    logger.warning("Scheduled push fetch attempt 1 failed, retrying: %s", e)
+                    import time
+                    time.sleep(1)
+                else:
+                    logger.exception("Scheduled push: fetch failed after retry")
+                    # Continue to still show digest from DB
 
         # Step 2: Build daily digest from DB
         today_local = self._to_local(datetime.now(timezone.utc))
