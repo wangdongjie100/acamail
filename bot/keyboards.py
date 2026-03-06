@@ -62,28 +62,27 @@ def email_list_keyboard(
 
 
 def non_actionable_detail_keyboard(email_id: str) -> InlineKeyboardMarkup:
-    """Keyboard for non-actionable emails — view only, with option to reply."""
+    """Same as email_detail_keyboard — unified view for all emails."""
+    return email_detail_keyboard(email_id)
+
+
+def email_detail_keyboard(email_id: str) -> InlineKeyboardMarkup:
+    """Keyboard shown under email detail — choose to reply or skip."""
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(
-                    "✉️ 我要回复", callback_data=f"{PREFIX_WANT_REPLY}:{email_id}"
-                ),
+                InlineKeyboardButton("✉️ 我要回复", callback_data=f"{PREFIX_WANT_REPLY}:{email_id}"),
+                InlineKeyboardButton("⏭️ 无需处理", callback_data=f"{PREFIX_SKIP}:{email_id}"),
             ],
             [
-                InlineKeyboardButton(
-                    "⏭️ 确认无需处理", callback_data=f"{PREFIX_SKIP}:{email_id}"
-                ),
-                InlineKeyboardButton(
-                    "⬅️ 返回列表", callback_data=f"{PREFIX_BACK}:list"
-                ),
+                InlineKeyboardButton("⬅️ 返回列表", callback_data=f"{PREFIX_BACK}:list"),
             ],
         ]
     )
 
 
-def email_detail_keyboard(email_id: str) -> InlineKeyboardMarkup:
-    """Keyboard shown under email detail — generate replies or skip."""
+def reply_tone_keyboard(email_id: str) -> InlineKeyboardMarkup:
+    """Keyboard shown after user clicks '我要回复' — choose reply tone."""
     return InlineKeyboardMarkup(
         [
             [
@@ -95,7 +94,6 @@ def email_detail_keyboard(email_id: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("✍️ 自定义指令", callback_data=f"{PREFIX_CUSTOM}:{email_id}"),
             ],
             [
-                InlineKeyboardButton("⏭️ 跳过", callback_data=f"{PREFIX_SKIP}:{email_id}"),
                 InlineKeyboardButton("⬅️ 返回列表", callback_data=f"{PREFIX_BACK}:list"),
             ],
         ]

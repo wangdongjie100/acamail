@@ -99,11 +99,24 @@ def format_email_detail(email: Email, clf: ClassificationResult) -> str:
     lines += [
         f"━━━━━━━━━━━━━━━━━━",
         f"",
-        f"📝 <b>内容摘要</b>",
+        f"📝 <b>AI 摘要</b>",
         f"{_escape(detail)}",
         f"",
         f"💡 <b>AI 判断</b>: {_escape(clf.reason)}",
     ]
+
+    # Add original email body (truncated)
+    body = email.body_text or email.snippet or ""
+    if body:
+        body_preview = body.strip()[:800]
+        if len(body.strip()) > 800:
+            body_preview += "..."
+        lines += [
+            f"",
+            f"━━━━━━━━━━━━━━━━━━",
+            f"📄 <b>邮件原文</b>",
+            f"<pre>{_escape(body_preview)}</pre>",
+        ]
 
     return "\n".join(lines)
 

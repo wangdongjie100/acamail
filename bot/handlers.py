@@ -50,6 +50,7 @@ from bot.keyboards import (
     email_list_keyboard,
     non_actionable_detail_keyboard,
     reply_preview_keyboard,
+    reply_tone_keyboard,
 )
 from config import Config
 from gmail.client import GmailClient
@@ -388,8 +389,8 @@ class BotHandlers:
                 await self._handle_custom_prompt(query, email_id, context)
                 return WAITING_CUSTOM_INSTRUCTIONS
             elif prefix == PREFIX_WANT_REPLY:
-                # User decided they want to reply to a non-actionable email
-                keyboard = email_detail_keyboard(email_id)
+                # User decided they want to reply — show reply tone options
+                keyboard = reply_tone_keyboard(email_id)
                 await query.edit_message_reply_markup(reply_markup=keyboard)
             elif prefix == PREFIX_SKIP:
                 await self._handle_skip(query, email_id)
@@ -434,11 +435,7 @@ class BotHandlers:
             return
 
         text = format_email_detail(email, clf)
-        # Show different keyboards based on whether email needs reply
-        if clf.needs_reply:
-            keyboard = email_detail_keyboard(email_id)
-        else:
-            keyboard = non_actionable_detail_keyboard(email_id)
+        keyboard = email_detail_keyboard(email_id)
         await query.edit_message_text(
             text, parse_mode=ParseMode.HTML, reply_markup=keyboard
         )
