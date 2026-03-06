@@ -626,27 +626,19 @@ class BotHandlers:
         """Skip this email without replying. Supports 'all_non' for bulk skip."""
         if email_id == "all_non":
             # Bulk skip all non-actionable emails
-            skipped = 0
             for eid in list(self._non_actionable_ids):
                 self.db.mark_skipped(eid)
                 if eid in self._active_email_ids:
                     self._active_email_ids.remove(eid)
-                self._email_cache.pop(eid, None)
-                self._clf_cache.pop(eid, None)
-                skipped += 1
             self._non_actionable_ids.clear()
 
             if self._active_email_ids:
-                remaining = len(self._active_email_ids)
                 actionable_ids = [eid for eid in self._active_email_ids if eid not in self._non_actionable_ids]
                 keyboard = email_list_keyboard(actionable_ids)
-                await query.edit_message_text(
-                    f"✅ 已跳过 {skipped} 封无需处理邮件。\n\n📬 还有 {remaining} 封邮件待处理 ⬇️",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=keyboard,
-                )
+                await query.edit_message_reply_markup(reply_markup=keyboard)
             else:
-                await query.edit_message_text(f"✅ 已跳过 {skipped} 封无需处理邮件。\n\n🎉 所有邮件已处理完毕！")
+                await query.edit_message_text("🎉 所有邮件已处理完毕！")
+            await query.answer("✅ 已跳过所有无需处理邮件")
             return
 
         self.db.mark_skipped(email_id)
@@ -654,47 +646,47 @@ class BotHandlers:
             self._active_email_ids.remove(email_id)
         if email_id in self._non_actionable_ids:
             self._non_actionable_ids.remove(email_id)
-        self._email_cache.pop(email_id, None)
-        self._clf_cache.pop(email_id, None)
         self._reply_cache.pop(email_id, None)
 
-        # Show remaining emails if any
+        # Update buttons only, keep summary text
         if self._active_email_ids:
-            remaining = len(self._active_email_ids)
             actionable_ids = [eid for eid in self._active_email_ids if eid not in self._non_actionable_ids]
             non_act_ids = [eid for eid in self._active_email_ids if eid in self._non_actionable_ids]
             keyboard = email_list_keyboard(actionable_ids, non_act_ids if non_act_ids else None)
-            await query.edit_message_text(
-                f"⏭️ 已跳过。\n\n📬 还有 {remaining} 封邮件待处理 ⬇️",
-                parse_mode=ParseMode.HTML,
-                reply_markup=keyboard,
-            )
+            await query.edit_message_reply_markup(reply_markup=keyboard)
         else:
-            await query.edit_message_text("⏭️ 已跳过。\n\n🎉 所有邮件已处理完毕！")
+            await query.edit_message_text("🎉 所有邮件已处理完毕！")
+        await query.answer("⏭️ 已跳过")
 
     async def _handle_back(self, query) -> None:
-        """Go back to the email list."""
+        """Go back to the email list — just restore the buttons."""
         if not self._active_email_ids:
             await query.edit_message_text("📭 没有待处理的邮件。")
             return
 
-        # Rebuild the summary
+        actionable_ids = [eid for eid in self._active_email_ids if eid not in self._non_actionable_ids]
+        non_act_ids = [eid for eid in self._active_email_ids if eid in self._non_actionable_ids]
+        keyboard = email_list_keyboard(actionable_ids, non_act_ids if non_act_ids else None)
+
+        # Restore original summary text + buttons
         actionable = []
+        non_actionable = []
         for eid in self._active_email_ids:
             email = self._email_cache.get(eid)
             clf = self._clf_cache.get(eid)
             if email and clf:
-                actionable.append((email, clf))
+                if eid in self._non_actionable_ids:
+                    non_actionable.append((email, clf))
+                else:
+                    actionable.append((email, clf))
 
-        if not actionable:
+        if actionable or non_actionable:
+            text = format_check_summary(actionable, non_actionable, "待处理")
+            await query.edit_message_text(
+                text, parse_mode=ParseMode.HTML, reply_markup=keyboard
+            )
+        else:
             await query.edit_message_text("📭 所有邮件已处理完毕!")
-            return
-
-        text = format_push_summary(actionable, 0)
-        keyboard = email_list_keyboard([e.id for e, _ in actionable])
-        await query.edit_message_text(
-            text, parse_mode=ParseMode.HTML, reply_markup=keyboard
-        )
 
     # ──────────────────────────────────────────────────────────
     # Push (called by scheduler)
