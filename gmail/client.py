@@ -6,10 +6,12 @@ import base64
 import json
 import logging
 import re
+import time
 from datetime import datetime
 from email.mime.text import MIMEText
 from typing import Optional
 
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
 from config import Config
@@ -23,9 +25,84 @@ class GmailClient:
     """High-level wrapper around the Gmail API."""
 
     def __init__(self) -> None:
-        creds = get_gmail_credentials()
-        self._service = build("gmail", "v1", credentials=creds)
+        self._creds = get_gmail_credentials()
+        self._service = build("gmail", "v1", credentials=self._creds)
         self._user = "me"
+
+    # ──────────────────────────────────────────────────────────
+    # Connection resilience helpers
+    # ──────────────────────────────────────────────────────────
+
+    def _save_token(self) -> None:
+        """Persist refreshed credentials to disk."""
+        try:
+            from pathlib import Path
+            token_cfg = Path(Config.GOOGLE_TOKEN_FILE)
+            _project_root = Path(__file__).parent.parent
+            token_path = token_cfg if token_cfg.is_absolute() else _project_root / token_cfg
+            with open(token_path, "w") as f:
+                f.write(self._creds.to_json())
+            logger.debug("Token saved to %s", token_path)
+        except Exception:
+            logger.warning("Failed to persist refreshed token to disk")
+
+    def _refresh_and_rebuild(self) -> bool:
+        """Refresh credentials, rebuild service, and save token.
+
+        Returns True if successful, False otherwise.
+        """
+        try:
+            self._creds.refresh(Request())
+            self._service = build("gmail", "v1", credentials=self._creds)
+            self._save_token()
+            return True
+        except Exception as e:
+            logger.warning("Credential refresh failed: %s", e)
+            return False
+
+    def _ensure_service(self) -> None:
+        """Proactively refresh credentials if expired and rebuild service.
+
+        Called before every API operation to avoid stale-token failures.
+        """
+        if self._creds.expired and self._creds.refresh_token:
+            if self._refresh_and_rebuild():
+                logger.info("Proactively refreshed expired credentials and rebuilt service")
+
+    def _call_api(self, request_builder, *, max_retries: int = 3):
+        """Execute a Gmail API request with automatic retry and reconnect.
+
+        On transient failures (expired tokens, stale HTTP connections), this
+        method refreshes credentials, rebuilds the service, and retries.
+
+        Args:
+            request_builder: A callable that takes no args and returns the
+                             API request object (with an .execute() method).
+                             Must be a callable so we can rebuild it after
+                             service reconnection.
+            max_retries: Maximum number of retry attempts.
+
+        Returns:
+            The API response.
+        """
+        self._ensure_service()
+
+        last_error: Exception = Exception("API call failed with no retries")
+        for attempt in range(max_retries):
+            try:
+                return request_builder().execute()
+            except Exception as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    wait = 1.0 * (attempt + 1)  # 1s, 2s backoff
+                    logger.warning(
+                        "API call failed (attempt %d/%d), refreshing credentials "
+                        "and retrying in %.1fs: %s",
+                        attempt + 1, max_retries, wait, e,
+                    )
+                    self._refresh_and_rebuild()
+                    time.sleep(wait)
+        raise last_error
 
     # ──────────────────────────────────────────────────────────
     # Read
@@ -50,11 +127,10 @@ class GmailClient:
 
     def get_email_detail(self, msg_id: str) -> Email:
         """Fetch full detail of a single message."""
-        raw = (
-            self._service.users()
+        raw = self._call_api(
+            lambda: self._service.users()
             .messages()
             .get(userId=self._user, id=msg_id, format="full")
-            .execute()
         )
         return self._parse_message(raw)
 
@@ -71,11 +147,10 @@ class GmailClient:
         mime["From"] = Config.USER_EMAIL
 
         raw_msg = base64.urlsafe_b64encode(mime.as_bytes()).decode("ascii")
-        sent = (
-            self._service.users()
+        sent = self._call_api(
+            lambda: self._service.users()
             .messages()
             .send(userId=self._user, body={"raw": raw_msg})
-            .execute()
         )
         msg_id = sent.get("id", "")
         logger.info("New email sent – id=%s to=%s subject=%s", msg_id, to_email, subject)
@@ -142,15 +217,14 @@ class GmailClient:
             msg.attach(ics_part)
 
         raw_msg = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii")
-        body = {
+        send_body = {
             "raw": raw_msg,
             "threadId": original.thread_id,
         }
-        sent = (
-            self._service.users()
+        sent = self._call_api(
+            lambda: self._service.users()
             .messages()
-            .send(userId=self._user, body=body)
-            .execute()
+            .send(userId=self._user, body=send_body)
         )
         msg_id = sent.get("id", "")
         logger.info("Calendar response sent – %s to=%s", response, original.reply_to_email)
@@ -224,16 +298,15 @@ class GmailClient:
         )
 
         raw_msg = base64.urlsafe_b64encode(mime.as_bytes()).decode("ascii")
-        body = {
+        send_body = {
             "raw": raw_msg,
             "threadId": original.thread_id,
         }
 
-        sent = (
-            self._service.users()
+        sent = self._call_api(
+            lambda: self._service.users()
             .messages()
-            .send(userId=self._user, body=body)
-            .execute()
+            .send(userId=self._user, body=send_body)
         )
         msg_id = sent.get("id", "")
         to_addr = mime["To"]
@@ -247,11 +320,10 @@ class GmailClient:
 
     def _search_emails(self, query: str, max_results: int) -> list[Email]:
         """Run a Gmail search query and return parsed Email objects."""
-        results = (
-            self._service.users()
+        results = self._call_api(
+            lambda: self._service.users()
             .messages()
             .list(userId=self._user, q=query, maxResults=max_results)
-            .execute()
         )
         messages = results.get("messages", [])
         if not messages:
@@ -260,13 +332,11 @@ class GmailClient:
         emails: list[Email] = []
         for msg_stub in messages:
             try:
-                raw = (
-                    self._service.users()
+                mid = msg_stub["id"]
+                raw = self._call_api(
+                    lambda _mid=mid: self._service.users()
                     .messages()
-                    .get(
-                        userId=self._user, id=msg_stub["id"], format="full"
-                    )
-                    .execute()
+                    .get(userId=self._user, id=_mid, format="full")
                 )
                 emails.append(self._parse_message(raw))
             except Exception:
@@ -404,12 +474,11 @@ class GmailClient:
 
     def check_thread_has_my_reply(self, thread_id: str) -> bool:
         """Check if the thread already contains a reply sent by the user."""
-        thread = (
-            self._service.users()
+        thread = self._call_api(
+            lambda: self._service.users()
             .threads()
             .get(userId=self._user, id=thread_id, format="metadata",
                  metadataHeaders=["From"])
-            .execute()
         )
         my_email = Config.USER_EMAIL.lower()
         messages = thread.get("messages", [])
