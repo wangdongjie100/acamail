@@ -45,6 +45,10 @@ class Config:
         int(h.strip()) for h in os.getenv("PUSH_HOURS", "12,21").split(",")
     ]
 
+    # ── Webhook (Cloud Run) ────────────────────────────────────
+    WEBHOOK_URL: str = os.getenv("WEBHOOK_URL", "")
+    CLOUD_SCHEDULER_SECRET: str = os.getenv("CLOUD_SCHEDULER_SECRET", "")
+
     # ── User ──────────────────────────────────────────────────
     USER_EMAIL: str = os.getenv("USER_EMAIL", "")
 
