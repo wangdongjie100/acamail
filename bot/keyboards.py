@@ -41,21 +41,16 @@ def email_list_keyboard(
             [InlineKeyboardButton(f"📧 查看第 {i} 封", callback_data=f"{PREFIX_VIEW}:{eid}")]
         )
 
-    # Non-actionable emails section
+    # Non-actionable emails: view + skip buttons per row
     if non_actionable_ids:
         for j, eid in enumerate(non_actionable_ids, 1):
-            buttons.append(
-                [InlineKeyboardButton(
-                    f"📭 无需处理 #{j}", 
-                    callback_data=f"{PREFIX_VIEW}:{eid}"
-                )]
-            )
-
-    # Add a "view all" button if multiple emails
-    total = len(email_ids) + len(non_actionable_ids or [])
-    if total > 1:
+            buttons.append([
+                InlineKeyboardButton(f"📭 查看 #{j}", callback_data=f"{PREFIX_VIEW}:{eid}"),
+                InlineKeyboardButton(f"⏭️ 跳过", callback_data=f"{PREFIX_SKIP}:{eid}"),
+            ])
+        # Bulk approve all non-actionable
         buttons.append(
-            [InlineKeyboardButton("📊 查看全部摘要", callback_data=f"{PREFIX_VIEW}:all")]
+            [InlineKeyboardButton("✅ 同意AI判断（跳过所有无需处理）", callback_data=f"{PREFIX_SKIP}:all_non")]
         )
 
     return InlineKeyboardMarkup(buttons)

@@ -101,6 +101,8 @@ class BotHandlers:
         self._reply_cache: dict[str, ReplyOptions] = {}
         # Currently active email list (for push summary)
         self._active_email_ids: list[str] = []
+        # Non-actionable email IDs (for split keyboard display)
+        self._non_actionable_ids: list[str] = []
         # Local timezone for display
         self._local_tz = pytz.timezone(Config.TIMEZONE)
 
@@ -299,6 +301,7 @@ class BotHandlers:
         actionable_ids = [e.id for e, _ in actionable]
         non_actionable_ids = [e.id for e, _ in non_actionable]
         self._active_email_ids = actionable_ids + non_actionable_ids
+        self._non_actionable_ids = non_actionable_ids
 
         if actionable_ids or non_actionable_ids:
             keyboard = email_list_keyboard(actionable_ids, non_actionable_ids)
@@ -620,10 +623,37 @@ class BotHandlers:
         return ConversationHandler.END
 
     async def _handle_skip(self, query, email_id: str) -> None:
-        """Skip this email without replying."""
+        """Skip this email without replying. Supports 'all_non' for bulk skip."""
+        if email_id == "all_non":
+            # Bulk skip all non-actionable emails
+            skipped = 0
+            for eid in list(self._non_actionable_ids):
+                self.db.mark_skipped(eid)
+                if eid in self._active_email_ids:
+                    self._active_email_ids.remove(eid)
+                self._email_cache.pop(eid, None)
+                self._clf_cache.pop(eid, None)
+                skipped += 1
+            self._non_actionable_ids.clear()
+
+            if self._active_email_ids:
+                remaining = len(self._active_email_ids)
+                actionable_ids = [eid for eid in self._active_email_ids if eid not in self._non_actionable_ids]
+                keyboard = email_list_keyboard(actionable_ids)
+                await query.edit_message_text(
+                    f"✅ 已跳过 {skipped} 封无需处理邮件。\n\n📬 还有 {remaining} 封邮件待处理 ⬇️",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=keyboard,
+                )
+            else:
+                await query.edit_message_text(f"✅ 已跳过 {skipped} 封无需处理邮件。\n\n🎉 所有邮件已处理完毕！")
+            return
+
         self.db.mark_skipped(email_id)
         if email_id in self._active_email_ids:
             self._active_email_ids.remove(email_id)
+        if email_id in self._non_actionable_ids:
+            self._non_actionable_ids.remove(email_id)
         self._email_cache.pop(email_id, None)
         self._clf_cache.pop(email_id, None)
         self._reply_cache.pop(email_id, None)
@@ -631,7 +661,9 @@ class BotHandlers:
         # Show remaining emails if any
         if self._active_email_ids:
             remaining = len(self._active_email_ids)
-            keyboard = email_list_keyboard(self._active_email_ids)
+            actionable_ids = [eid for eid in self._active_email_ids if eid not in self._non_actionable_ids]
+            non_act_ids = [eid for eid in self._active_email_ids if eid in self._non_actionable_ids]
+            keyboard = email_list_keyboard(actionable_ids, non_act_ids if non_act_ids else None)
             await query.edit_message_text(
                 f"⏭️ 已跳过。\n\n📬 还有 {remaining} 封邮件待处理 ⬇️",
                 parse_mode=ParseMode.HTML,
