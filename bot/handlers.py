@@ -389,6 +389,13 @@ class BotHandlers:
                 await self._handle_skip(query, email_id)
             elif prefix == PREFIX_BACK:
                 await self._handle_back(query)
+        except telegram.error.BadRequest as e:
+            if "message is not modified" in str(e).lower():
+                # User clicked the same button twice — harmless, just acknowledge
+                await query.answer()
+            else:
+                logger.exception("Error handling callback: %s", data)
+                await query.edit_message_text("⚠️ 处理时出错，请重试。")
         except Exception:
             logger.exception("Error handling callback: %s", data)
             await query.edit_message_text("⚠️ 处理时出错，请重试。")
