@@ -288,9 +288,17 @@ class BotHandlers:
 
         text = format_check_summary(actionable, non_actionable, since_label)
 
-        if actionable:
-            self._active_email_ids = [e.id for e, _ in actionable]
-            keyboard = email_list_keyboard(self._active_email_ids)
+        # Cache all emails (both actionable and non-actionable)
+        for email, clf in actionable + non_actionable:
+            self._email_cache[email.id] = email
+            self._clf_cache[email.id] = clf
+
+        actionable_ids = [e.id for e, _ in actionable]
+        non_actionable_ids = [e.id for e, _ in non_actionable]
+        self._active_email_ids = actionable_ids + non_actionable_ids
+
+        if actionable_ids or non_actionable_ids:
+            keyboard = email_list_keyboard(actionable_ids, non_actionable_ids)
 
             parts = self._split_message(text)
             for i, part in enumerate(parts):

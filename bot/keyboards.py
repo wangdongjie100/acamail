@@ -24,16 +24,35 @@ PREFIX_SEND = "send"          # Final send (reply to sender only)
 PREFIX_SEND_ALL = "sendall"   # Final send (reply all)
 
 
-def email_list_keyboard(email_ids: list[str]) -> InlineKeyboardMarkup:
-    """Keyboard shown under the push summary — one button per email."""
+def email_list_keyboard(
+    email_ids: list[str],
+    non_actionable_ids: list[str] | None = None,
+) -> InlineKeyboardMarkup:
+    """Keyboard shown under the push summary — one button per email.
+    
+    Args:
+        email_ids: IDs of actionable (needs_reply) emails.
+        non_actionable_ids: IDs of non-actionable emails (optional).
+    """
     buttons = []
     for i, eid in enumerate(email_ids, 1):
         buttons.append(
             [InlineKeyboardButton(f"📧 查看第 {i} 封", callback_data=f"{PREFIX_VIEW}:{eid}")]
         )
 
+    # Non-actionable emails section
+    if non_actionable_ids:
+        for j, eid in enumerate(non_actionable_ids, 1):
+            buttons.append(
+                [InlineKeyboardButton(
+                    f"📭 无需处理 #{j}", 
+                    callback_data=f"{PREFIX_VIEW}:{eid}"
+                )]
+            )
+
     # Add a "view all" button if multiple emails
-    if len(email_ids) > 1:
+    total = len(email_ids) + len(non_actionable_ids or [])
+    if total > 1:
         buttons.append(
             [InlineKeyboardButton("📊 查看全部摘要", callback_data=f"{PREFIX_VIEW}:all")]
         )
