@@ -524,6 +524,8 @@ class BotHandlers:
             # Remove from active list
             if email_id in self._active_email_ids:
                 self._active_email_ids.remove(email_id)
+            if email_id in self._non_actionable_ids:
+                self._non_actionable_ids.remove(email_id)
             self._email_cache.pop(email_id, None)
             self._clf_cache.pop(email_id, None)
             self._reply_cache.pop(email_id, None)
@@ -538,7 +540,9 @@ class BotHandlers:
             if self._active_email_ids:
                 remaining = len(self._active_email_ids)
                 sent_msg += f"\n\n📬 还有 {remaining} 封邮件待处理 ⬇️"
-                keyboard = email_list_keyboard(self._active_email_ids)
+                actionable_ids = [eid for eid in self._active_email_ids if eid not in self._non_actionable_ids]
+                non_act_ids = [eid for eid in self._active_email_ids if eid in self._non_actionable_ids]
+                keyboard = email_list_keyboard(actionable_ids, non_act_ids if non_act_ids else None)
                 await query.edit_message_text(
                     sent_msg, parse_mode=ParseMode.HTML, reply_markup=keyboard
                 )

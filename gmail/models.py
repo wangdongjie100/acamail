@@ -40,7 +40,9 @@ class Email:
     @property
     def reply_to_email(self) -> str:
         """The email address to reply to (original sender if forwarded)."""
-        return self.original_sender_email if self.is_forwarded else self.sender_email
+        if self.is_forwarded and "@" in self.original_sender_email:
+            return self.original_sender_email
+        return self.sender_email
 
     @property
     def reply_to_name(self) -> str:
