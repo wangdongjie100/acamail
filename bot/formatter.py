@@ -105,18 +105,39 @@ def format_email_detail(email: Email, clf: ClassificationResult) -> str:
         f"💡 <b>AI 判断</b>: {_escape(clf.reason)}",
     ]
 
-    # Add original email body (truncated)
+    # Add original email body (cleaned, truncated)
     body = email.body_text or email.snippet or ""
     if body:
-        body_preview = body.strip()[:800]
-        if len(body.strip()) > 800:
-            body_preview += "..."
-        lines += [
-            f"",
-            f"━━━━━━━━━━━━━━━━━━",
-            f"📄 <b>邮件原文</b>",
-            f"<pre>{_escape(body_preview)}</pre>",
-        ]
+        # Strip email headers and metadata from body
+        import re
+        cleaned_lines = []
+        for line in body.strip().splitlines():
+            stripped = line.strip()
+            # Skip header-like lines
+            if re.match(r'^(From|To|Cc|Bcc|Date|Sent|Subject|Reply-To|Received|Content-Type|MIME-Version|Message-ID|In-Reply-To|References)\s*:', stripped, re.IGNORECASE):
+                continue
+            # Skip forwarded header markers
+            if stripped.startswith('---------- Forwarded message') or stripped.startswith('-----Original Message'):
+                continue
+            # Skip lines that are just email addresses in angle brackets
+            if re.match(r'^<[^>]+@[^>]+>$', stripped):
+                continue
+            cleaned_lines.append(line)
+        
+        cleaned = '\n'.join(cleaned_lines).strip()
+        # Remove excessive blank lines
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        
+        if cleaned:
+            body_preview = cleaned[:600]
+            if len(cleaned) > 600:
+                body_preview += "..."
+            lines += [
+                f"",
+                f"━━━━━━━━━━━━━━━━━━",
+                f"📄 <b>邮件原文</b>",
+                f"<pre>{_escape(body_preview)}</pre>",
+            ]
 
     return "\n".join(lines)
 
