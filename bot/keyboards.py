@@ -22,6 +22,7 @@ PREFIX_SKIP = "skip"          # Skip this email
 PREFIX_BACK = "back"          # Back to list
 PREFIX_SEND = "send"          # Final send (reply to sender only)
 PREFIX_SEND_ALL = "sendall"   # Final send (reply all)
+PREFIX_WANT_REPLY = "wantreply"  # User wants to reply to non-actionable email
 
 
 def email_list_keyboard(
@@ -58,6 +59,27 @@ def email_list_keyboard(
         )
 
     return InlineKeyboardMarkup(buttons)
+
+
+def non_actionable_detail_keyboard(email_id: str) -> InlineKeyboardMarkup:
+    """Keyboard for non-actionable emails — view only, with option to reply."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "✉️ 我要回复", callback_data=f"{PREFIX_WANT_REPLY}:{email_id}"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "⏭️ 确认无需处理", callback_data=f"{PREFIX_SKIP}:{email_id}"
+                ),
+                InlineKeyboardButton(
+                    "⬅️ 返回列表", callback_data=f"{PREFIX_BACK}:list"
+                ),
+            ],
+        ]
+    )
 
 
 def email_detail_keyboard(email_id: str) -> InlineKeyboardMarkup:

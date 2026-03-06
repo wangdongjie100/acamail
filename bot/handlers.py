@@ -44,9 +44,11 @@ from bot.keyboards import (
     PREFIX_SKIP,
     PREFIX_SWITCH,
     PREFIX_VIEW,
+    PREFIX_WANT_REPLY,
     confirm_send_keyboard,
     email_detail_keyboard,
     email_list_keyboard,
+    non_actionable_detail_keyboard,
     reply_preview_keyboard,
 )
 from config import Config
@@ -385,6 +387,10 @@ class BotHandlers:
             elif prefix == PREFIX_CUSTOM:
                 await self._handle_custom_prompt(query, email_id, context)
                 return WAITING_CUSTOM_INSTRUCTIONS
+            elif prefix == PREFIX_WANT_REPLY:
+                # User decided they want to reply to a non-actionable email
+                keyboard = email_detail_keyboard(email_id)
+                await query.edit_message_reply_markup(reply_markup=keyboard)
             elif prefix == PREFIX_SKIP:
                 await self._handle_skip(query, email_id)
             elif prefix == PREFIX_BACK:
@@ -428,7 +434,11 @@ class BotHandlers:
             return
 
         text = format_email_detail(email, clf)
-        keyboard = email_detail_keyboard(email_id)
+        # Show different keyboards based on whether email needs reply
+        if clf.needs_reply:
+            keyboard = email_detail_keyboard(email_id)
+        else:
+            keyboard = non_actionable_detail_keyboard(email_id)
         await query.edit_message_text(
             text, parse_mode=ParseMode.HTML, reply_markup=keyboard
         )
