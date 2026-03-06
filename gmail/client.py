@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import re
 from datetime import datetime
@@ -322,9 +323,15 @@ class GmailClient:
             
         if is_forwarded and body_text:
             orig_name, orig_email = self._extract_forwarded_sender(body_text)
-            if orig_email:
+            if orig_email and "@" in orig_email:
                 original_sender = orig_name
                 original_sender_email = orig_email
+            elif orig_name and not orig_email:
+                # Only got a name (e.g. Outlook-style forward) — try contacts lookup
+                looked_up = self._lookup_contact_email(orig_name)
+                if looked_up:
+                    original_sender = orig_name
+                    original_sender_email = looked_up
             # Extract original To/CC from forwarded body for Reply All
             fwd_recipients = self._extract_forwarded_recipients(body_text)
             if fwd_recipients:
@@ -418,6 +425,30 @@ class GmailClient:
                 return True
         return False
 
+
+    @staticmethod
+    def _lookup_contact_email(name: str) -> str:
+        """Try to find an email address from contacts.json by name."""
+        from pathlib import Path
+        contacts_path = Path(__file__).resolve().parent.parent / "contacts.json"
+        if not contacts_path.exists():
+            return ""
+        try:
+            with open(contacts_path, "r") as f:
+                data = json.load(f)
+            contacts = data.get("contacts", {})
+            name_lower = name.lower().strip()
+            for contact_name, email in contacts.items():
+                if contact_name.lower() == name_lower:
+                    return email
+            # Partial match as fallback
+            for contact_name, email in contacts.items():
+                if name_lower in contact_name.lower() or contact_name.lower() in name_lower:
+                    return email
+        except Exception:
+            pass
+        return ""
+
     @staticmethod
     def _extract_forwarded_sender(body_text: str) -> tuple[str, str]:
         """Extract the original From sender from a forwarded email body.
@@ -427,7 +458,7 @@ class GmailClient:
         - 'From: john@example.com'
         - '---------- Forwarded message ----------\nFrom: ...'
         """
-        # Pattern: 'From: Name <email>' or 'From: email'
+        # Pattern: 'From: Name <email>' or 'From: email' or 'From: Name'
         patterns = [
             r'(?:^|\n)\s*From:\s*(.+?)\s*<([^>]+)>',
             r'(?:^|\n)\s*From:\s*<?([\w.+-]+@[\w.-]+)>?',
@@ -441,6 +472,14 @@ class GmailClient:
                     return groups[0].strip(), groups[1].strip()
                 elif len(groups) == 1:
                     return "", groups[0].strip()
+        
+        # Fallback: extract name-only From line (e.g. "From: John Doe")
+        name_match = re.search(r'(?:^|\n)\s*From:\s*"?([^"\n<>@]+)"?\s*$', body_text, re.IGNORECASE | re.MULTILINE)
+        if name_match:
+            name = name_match.group(1).strip()
+            if name and len(name) > 1:
+                return name, ""  # Return name only, email will be looked up from contacts
+        
         return "", ""
 
     @staticmethod
